@@ -81,6 +81,16 @@ kept in `lazily--bad-forms' to be tried again later."
         (remove-hook 'after-load-functions 'lazily--redo)
       (setq lazily--bad-forms (nreverse still-bad)))))
 
+(defun lazily--log (error-data form)
+  "Print log message about bad form if enabled."
+  (unless lazily-is-quiet
+    (message "lazily: Found void (unknown) %s `%s' in form
+        %s"
+             (if (eq (car error-data) 'void-variable)
+                 "variable" "function")
+             (car (cdr-safe error-data))
+             (pp-to-string form))))
+
 (defmacro lazily-do (&rest forms)
   "Eval FORMS catching void-variable or void-function errors.
 
@@ -88,21 +98,21 @@ Any forms that throw void-variable or void-function errors are
 stored in `lazily--bad-forms' to be tried again later.
 Specifically, a `after-load-functions' hook is added to try and
 execute these bad forms again after a new feature is loaded."
-  `(let (error-forms)
-     (dolist (form ',forms)
-       (condition-case edata
-           (eval form)
-         ((void-variable void-function)
-          (unless lazily-is-quiet
-            (message "lazily: Found void (unknown) %s `%s' in form\n        %s"
-                     (if (eq (car edata) 'void-variable)
-                         "variable" "function")
-                     (car (cdr-safe edata)) (pp-to-string form)))
-          (push form error-forms))))
-     (setq lazily--bad-forms
-           (append lazily--bad-forms
-                   (nreverse error-forms)))
-     (add-hook 'after-load-functions #'lazily--redo)))
+  (let ((wrapped-forms
+         (mapcar
+          (lambda (form)
+            `(condition-case error-data
+                 ,form
+               ((void-variable void-function)
+                (lazily--log error-data ',form)
+                (push ',form error-forms))))
+          forms)))
+    `(let (error-forms)
+       ,@wrapped-forms
+       (setq lazily--bad-forms
+             (append lazily--bad-forms
+                     (nreverse error-forms)))
+       (add-hook 'after-load-functions #'lazily--redo))))
 
 (provide 'lazily)
 ;;; lazily.el ends here
