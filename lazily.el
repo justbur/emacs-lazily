@@ -94,6 +94,7 @@ kept in `lazily--bad-forms' to be tried again later."
              (car (cdr-safe error-data))
              (pp-to-string form))))
 
+;;;###autoload
 (defmacro lazily-do (&rest forms)
   "Eval FORMS catching void-variable or void-function errors.
 
