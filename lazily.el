@@ -52,6 +52,17 @@
 
 ;;; Code:
 
+(require 'pp)
+
+(defgroup lazily nil
+  "Lazily configure Emacs"
+  :group 'startup)
+
+(defcustom lazily-is-quiet t
+  "If nil, log failed forms in message buffer."
+  :type 'boolean
+  :group 'lazily)
+
 (defvar lazily--bad-forms nil)
 
 (defun lazily--redo (&rest _)
@@ -79,9 +90,14 @@ Specifically, a `after-load-functions' hook is added to try and
 execute these bad forms again after a new feature is loaded."
   `(let (error-forms)
      (dolist (form ',forms)
-       (condition-case nil
+       (condition-case edata
            (eval form)
-         ((void-function void-variable)
+         ((void-variable void-function)
+          (unless lazily-is-quiet
+            (message "lazily: Found void (unknown) %s `%s' in form\n        %s"
+                     (if (eq (car edata) 'void-variable)
+                         "variable" "function")
+                     (car (cdr-safe edata)) (pp-to-string form)))
           (push form error-forms))))
      (setq lazily--bad-forms
            (append lazily--bad-forms
