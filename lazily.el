@@ -3,7 +3,6 @@
 ;; Copyright (C) 2017 Justin Burkett
 
 ;; Author: Justin Burkett <justin@burkett.cc>
-;; Package-Requires:
 ;; Homepage: https://github.com/justbur/emacs-lazily
 ;; Version: 0.0.0
 
