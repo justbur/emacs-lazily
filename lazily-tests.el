@@ -26,26 +26,25 @@
 
 (ert-deftest lazily-tests-check-form-processing ()
   "Check that forms are added to `lazily--bad-forms' correctly."
-  (let ((obarray obarray)
-        (good-list '(1))
-        lazily--bad-forms)
-    (cl-flet ((good-func (lambda () (message "good"))))
-      (unintern 'bad-list obarray)
-      (unintern 'bad-func obarray)
-      (lazily-do
-       (add-to-list 'good-list 2)
-       (add-to-list 'bad-list 2)
-       (good-func)
-       (bad-func))
-      (should
-       (equal lazily--bad-forms
-              '(((void-variable bad-list) . (add-to-list 'bad-list 2))
-                ((void-function bad-func) . (bad-func)))))
-      (defun bad-func () nil)
-      (lazily--redo)
-      (should
-       (equal lazily--bad-forms
-              '(((void-variable bad-list) . (add-to-list 'bad-list 2)))))
-      (setq bad-list '(1))
-      (lazily--redo)
-      (should (null lazily--bad-forms)))))
+  (let (lazily--bad-forms)
+    (setq lazily-tests-good-list '(1))
+    (defun lazily-tests-good-func () nil)
+    (unintern 'lazily-tests-bad-list obarray)
+    (unintern 'lazily-tests-bad-func obarray)
+    (lazily-do
+     (add-to-list 'lazily-tests-good-list 2)
+     (add-to-list 'lazily-tests-bad-list 2)
+     (lazily-tests-good-func)
+     (lazily-tests-bad-func))
+    (should
+     (equal lazily--bad-forms
+            '(((void-variable lazily-tests-bad-list) . (add-to-list 'lazily-tests-bad-list 2))
+              ((void-function lazily-tests-bad-func) . (lazily-tests-bad-func)))))
+    (defun lazily-tests-bad-func () nil)
+    (lazily--redo)
+    (should
+     (equal lazily--bad-forms
+            '(((void-variable lazily-tests-bad-list) . (add-to-list 'lazily-tests-bad-list 2)))))
+    (setq lazily-tests-bad-list '(1))
+    (lazily--redo)
+    (should (null lazily--bad-forms))))
