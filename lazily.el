@@ -73,13 +73,20 @@ condition-case.")
 
 Any forms that throw void-variable or void-function errors are
 kept in `lazily--bad-forms' to be tried again later."
-  (let (form still-bad)
+  (let (still-bad)
     (while lazily--bad-forms
-      (setq form (cdr (pop lazily--bad-forms)))
-      (condition-case error-data
-          (eval form)
-        ((void-function void-variable)
-         (push (cons error-data form) still-bad))))
+      (let* ((bad-form-data (pop lazily--bad-forms))
+             (prev-error-data (car bad-form-data))
+             (form (cdr bad-form-data)))
+        (if (or (and (eq (car prev-error-data) 'void-variable)
+                     (boundp (cadr prev-error-data)))
+                (and (eq (car prev-error-data) 'void-function)
+                     (fboundp (cadr prev-error-data))))
+            (condition-case error-data
+                (eval form)
+              ((void-function void-variable)
+               (push (cons error-data form) still-bad)))
+          (push bad-form-data still-bad))))
     (if (null still-bad)
         (remove-hook 'after-load-functions 'lazily--redo)
       (setq lazily--bad-forms (nreverse still-bad)))))
