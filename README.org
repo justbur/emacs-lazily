@@ -34,3 +34,6 @@ something calls or loads bad-library. This fires =lazily--redo= to try the saved
 forms again, and now that =bad-list= is defined the original error goes away and
 everything is dandy.
 
+** Configuration options
+   - =lazily-is-quiet=: Set this variable to =nil= if you want to log bad forms
+     when they are found.
