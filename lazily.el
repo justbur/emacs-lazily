@@ -75,11 +75,11 @@ Any forms that throw void-variable or void-function errors are
 kept in `lazily--bad-forms' to be tried again later."
   (let (form still-bad)
     (while lazily--bad-forms
-      (setq form (pop lazily--bad-forms))
-      (condition-case nil
+      (setq form (cdr (pop lazily--bad-forms)))
+      (condition-case error-data
           (eval form)
         ((void-function void-variable)
-         (push form still-bad))))
+         (push (cons error-data form) still-bad))))
     (if (null still-bad)
         (remove-hook 'after-load-functions 'lazily--redo)
       (setq lazily--bad-forms (nreverse still-bad)))))
@@ -108,7 +108,7 @@ execute these bad forms again after a new feature is loaded."
                  ,form
                ((void-variable void-function)
                 (lazily--log error-data ',form)
-                (push ',form error-forms))))
+                (push (cons error-data ',form) error-forms))))
           forms)))
     `(let (error-forms)
        ,@wrapped-forms
