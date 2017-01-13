@@ -63,7 +63,10 @@
   :type 'boolean
   :group 'lazily)
 
-(defvar lazily--bad-forms nil)
+(defvar lazily--bad-forms nil
+  "Forms currently with void variables or functions. Each cell
+takes the form \(ERROR-DATA . FORM\). ERROR-DATA is from
+condition-case.")
 
 (defun lazily--redo (&rest _)
   "Try to execute all forms in `lazily--bad-forms'.
