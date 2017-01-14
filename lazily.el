@@ -64,9 +64,10 @@
   :group 'lazily)
 
 (defvar lazily--bad-forms nil
-  "Forms currently with void variables or functions. Each cell
-takes the form \(ERROR-DATA . FORM\). ERROR-DATA is from
-condition-case.")
+  "Forms currently with void variables or functions. Each sub
+list takes the form \(FORM ERROR-DATA FILE\). ERROR-DATA is from
+condition-case, and FILE is the file being loaded when the error
+is encountered. ")
 
 (defun lazily--redo (&rest _)
   "Try to execute all forms in `lazily--bad-forms'.
@@ -75,9 +76,10 @@ Any forms that throw void-variable or void-function errors are
 kept in `lazily--bad-forms' to be tried again later."
   (let (still-bad)
     (while lazily--bad-forms
-      (let* ((bad-form-data (pop lazily--bad-forms))
-             (prev-error-data (car bad-form-data))
-             (form (cdr bad-form-data)))
+      (let* ((bad-form-list (pop lazily--bad-forms))
+             (form (nth 0 bad-form-list))
+             (prev-error-data (nth 1 bad-form-list))
+             (file (nth 2 bad-form-list)))
         (if (or (and (eq (car prev-error-data) 'void-variable)
                      (boundp (cadr prev-error-data)))
                 (and (eq (car prev-error-data) 'void-function)
@@ -85,8 +87,8 @@ kept in `lazily--bad-forms' to be tried again later."
             (condition-case error-data
                 (eval form)
               ((void-function void-variable)
-               (push (cons error-data form) still-bad)))
-          (push bad-form-data still-bad))))
+               (push (list form error-data nil) still-bad)))
+          (push bad-form-list still-bad))))
     (if (null still-bad)
         (remove-hook 'after-load-functions 'lazily--redo)
       (setq lazily--bad-forms (nreverse still-bad)))))
@@ -116,7 +118,8 @@ execute these bad forms again after a new feature is loaded."
                  ,form
                ((void-variable void-function)
                 (lazily--log error-data ',form)
-                (push (cons error-data ',form) error-forms))))
+                (push (list ',form error-data load-file-name)
+                      error-forms))))
           forms)))
     `(let (error-forms)
        ,@wrapped-forms

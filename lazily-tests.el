@@ -38,13 +38,16 @@
      (lazily-tests-bad-func))
     (should
      (equal lazily--bad-forms
-            '(((void-variable lazily-tests-bad-list) . (add-to-list 'lazily-tests-bad-list 2))
-              ((void-function lazily-tests-bad-func) . (lazily-tests-bad-func)))))
+            '(((add-to-list 'lazily-tests-bad-list 2)
+               (void-variable lazily-tests-bad-list) nil)
+              ((lazily-tests-bad-func)
+               (void-function lazily-tests-bad-func) nil))))
     (defun lazily-tests-bad-func () nil)
     (lazily--redo)
     (should
      (equal lazily--bad-forms
-            '(((void-variable lazily-tests-bad-list) . (add-to-list 'lazily-tests-bad-list 2)))))
+            '(((add-to-list 'lazily-tests-bad-list 2)
+               (void-variable lazily-tests-bad-list) nil))))
     (setq lazily-tests-bad-list '(1))
     (lazily--redo)
     (should (null lazily--bad-forms))))
