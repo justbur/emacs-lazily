@@ -103,6 +103,28 @@ kept in `lazily--bad-forms' to be tried again later."
              (car (cdr-safe error-data))
              (pp-to-string form))))
 
+(defun lazily-report ()
+  "Produce report of bad forms found."
+  (interactive)
+  (let ((buffer (get-buffer-create "*lazily-report*")))
+    (with-current-buffer buffer
+      (erase-buffer)
+      (insert "lazily found the following errors in forms:\n\n")
+      (dolist (form-data lazily--bad-forms)
+        (let ((file (nth 2 form-data))
+              (err  (car (nth 1 form-data)))
+              (sym  (nth 1 (nth 1 form-data)))
+              (form (nth 0 form-data)))
+          (insert (format "[%s] %s %s found in form\n  %s\n"
+                          (or file "unknown file")
+                          (or (replace-regexp-in-string
+                               "-" " " (symbol-name err))
+                               "unknown error for")
+                          (or sym "unknown symbol")
+                          (pp-to-string form))))))
+    (switch-to-buffer-other-window buffer)
+    (local-set-key "q" 'delete-window)))
+
 ;;;###autoload
 (defmacro lazily-do (&rest forms)
   "Eval FORMS catching void-variable or void-function errors.
