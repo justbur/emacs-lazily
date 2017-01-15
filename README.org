@@ -1,12 +1,12 @@
 * Lazily
 
-This package simply provides the macro =lazily-do= for use in Emacs
-configuration files. It only does one thing. You can wrap any configuration
-steps in the macro without having to worry about void-variable messages or
-void-function errors. In the example below =good-list= is declared, but Emacs
-doesn't know about =bad-list= or =bad-func= yet. This would throw a
-void-variable error. Execution stops here and we don't get to =bad-func=, which
-would throw a void-function error.
+This package provides the macros =lazily-do= =lazily-do-all= for use in Emacs
+configuration files. With these you can wrap configuration steps in the macro
+without having to worry (too much) about void-variable messages or void-function
+errors. In the example below =good-list= is declared, but Emacs doesn't know
+about =bad-list= or =bad-func= yet. This would throw a void-variable
+error. Execution stops here and we don't get to =bad-func=, which would throw a
+void-function error.
 
 #+BEGIN_SRC emacs-lisp
   (defvar good-list nil)
@@ -16,10 +16,9 @@ would throw a void-function error.
 #+END_SRC
 
 We have a couple of options here. We could figure out which library defines
-=bad-list= and =bad-func=. This is usually easy but not always. Did you know
-that =org-latex-classes= is initialized in =ox-latex=? If =ox-latex= isn't
-loaded, Emacs doesn't know this either. To fix this we could =(require
-'ox-latex)= or use =with-eval-after-load= like this
+=bad-list= and =bad-func=. This is usually straightforward but not always. To
+fix this we could =(require 'bad-library)= or use =with-eval-after-load= like
+this
 
 #+BEGIN_SRC emacs-lisp
   (with-eval-after-load 'bad-library
@@ -27,10 +26,12 @@ loaded, Emacs doesn't know this either. To fix this we could =(require
    (bad-func))
 #+END_SRC
 
-The way =lazily-do= works is it stores the forms in a list and tries again to
-eval those forms (in order) every time a new library is loaded. It accomplishes
-this through using the =after-load-functions= hook. To illustrate suppose we
-modified the example to this.
+The way =lazily-do= and =lazily-do-all= work is they store the forms in a list
+along with the conditions that produced the error. When a new library is loaded,
+lazily checks if the error condition has been resolved for any of the
+problematic forms. If so, execution is tried again. It accomplishes this through
+using the =after-load-functions= hook. To illustrate suppose we modified the
+example to this.
 
 #+BEGIN_SRC emacs-lisp
   (defvar good-list nil)
@@ -42,30 +43,44 @@ modified the example to this.
 
 The form with =good-list= will execute fine and there will be no difference to
 having this form at the top level. The one with =bad-list= throws a
-void-variable error which is caught and the form is saved for later. The one
-with =bad-func= throws a void-function error and is caught and saved, too. We do
-some work and eventually something calls or loads =bad-library=. This fires
-=lazily--redo= to try the saved forms again, and now that =bad-list= is defined
-the original error goes away and everything is dandy.
+void-variable error which is caught and execution stops. The form with
+=bad-list= in it as well as all of the forms following it are saved for later
+along with some information about the error and the file it happened in. Every
+time a new file is loaded in Emacs, lazily checks to see if the error is
+resolved (i.e., =bad-list= is now defined) and if it is it tries to execute the
+forms again, automatically.
 
-** Implementation notes
-   - =lazily-do= is greedy in that after finding a form that throws an error it
-     keeps going until all the forms are processed. If you require that some
-     code execute before other code, this is easily taken care of by grouping
-     forms using a construct like =progn=. For example, something like this
-     could be done. 
-     #+BEGIN_SRC emacs-lisp
-       (defvar good-list nil)
-       (lazily-do
-        (add-to-list 'good-list 1)
-        (progn
-          (add-to-list 'bad-list 1)
-          (bad-func)))
-     #+END_SRC
-     Without the =progn=, if at some point =bad-func= was defined and =bad-list=
-     was not, then =lazily= would try to execute =bad-func= by itself. With the
-     =progn= this can't happen, because the =progn= is taken to be one form and
-     is stored as a single unit.
+=lazily-do-all= is greedier. In the example below, after the =bad-list= form
+throws an error lazily continues to try forms catching and storing errors along
+the way. In this example, this means that =good-func= gets executed right away,
+instead of waiting for the problem to be resolved with =bad-list=.
+
+#+BEGIN_SRC emacs-lisp
+  (defvar good-list nil)
+  (lazily-do-all
+   (add-to-list 'good-list 1)
+   (add-to-list 'bad-list 1)
+   (bad-func)
+   (good-func))
+#+END_SRC
+
+** Issues
+
+The guiding idea is that void variables or functions are void because they have
+not yet been loaded. This seems like a common configuration error, and to a
+certain degree lazily removes some concern about what should be loaded before
+what. It queues undefined variables and functions and checks to see if they are
+defined later.
+
+Of course, if the variable is never defined, the form will never execute. It
+can't execute anyway, but lazily might prevent an error due to a typo for
+example. That is the purpose of using the report function =lazily-report= to
+inspect any forms that never get executed.
+
+** Reporting
+
+A basic report of what lazily found can be generated with =lazily-report=. This
+can be used to debug any issues with lazily. 
 
 ** Configuration options
    - =lazily-is-quiet=: Set this variable to =nil= if you want to log bad forms
