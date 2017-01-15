@@ -64,34 +64,49 @@
   :group 'lazily)
 
 (defvar lazily--bad-forms nil
-  "Forms currently with void variables or functions. Each sub
-list takes the form \(FORM ERROR-DATA FILE\). ERROR-DATA is from
-condition-case, and FILE is the file being loaded when the error
-is encountered. ")
+  "Forms currently with void variables or functions. This is a
+list of lists of lists. Each sub list has the structure
+
+\(\(FORM ERROR-DATA FILE\)
+  \(FORM ERROR-DATA FILE\)
+  ...\)
+
+A sub list represents dependencies, since the latter forms in the
+list may only execute if the ones before it can. Once one fails
+we stop checking and keep the sub list.
+
+ERROR-DATA is from condition-case, and FILE (if we know it) is
+the file being loaded when the error is encountered.")
+
+(defun lazily--try-form-again-p (form-data)
+  (or (null (nth 1 form-data))
+      (and (eq 'void-variable (car (nth 1 form-data)))
+           (boundp (cadr (nth 1 form-data))))
+      (and (eq 'void-function (car (nth 1 form-data)))
+           (fboundp (cadr (nth 1 form-data))))))
 
 (defun lazily--redo (&rest _)
   "Try to execute all forms in `lazily--bad-forms'.
 
 Any forms that throw void-variable or void-function errors are
 kept in `lazily--bad-forms' to be tried again later."
-  (let (still-bad)
-    (while lazily--bad-forms
-      (let* ((bad-form-list (pop lazily--bad-forms))
-             (form (nth 0 bad-form-list))
-             (prev-error-data (nth 1 bad-form-list))
-             (file (nth 2 bad-form-list)))
-        (if (or (and (eq (car prev-error-data) 'void-variable)
-                     (boundp (cadr prev-error-data)))
-                (and (eq (car prev-error-data) 'void-function)
-                     (fboundp (cadr prev-error-data))))
-            (condition-case error-data
-                (eval form)
-              ((void-function void-variable)
-               (push (list form error-data nil) still-bad)))
-          (push bad-form-list still-bad))))
-    (if (null still-bad)
-        (remove-hook 'after-load-functions 'lazily--redo)
-      (setq lazily--bad-forms (nreverse still-bad)))))
+  (dotimes (i (length lazily--bad-forms))
+    (let ((dep-list (nth i lazily--bad-forms)) err)
+      (while (and (null err) dep-list)
+        (let* ((form-data (pop dep-list))
+               (form (car form-data)))
+          (if (lazily--try-form-again-p form-data)
+              (condition-case error-data
+                  (eval form)
+                ((void-function void-variable)
+                 (setq err t)
+                 (push (list form error-data nil) dep-list)))
+            (setq err t)
+            (push form-data dep-list))))
+      (setf (nth i lazily--bad-forms) dep-list)))
+  (setq lazily--bad-forms (delq nil lazily--bad-forms))
+  (when (null lazily--bad-forms)
+    (remove-hook 'after-load-functions 'lazily--redo)))
 
 (defun lazily--log (error-data form)
   "Print log message about bad form if enabled."
@@ -110,18 +125,22 @@ kept in `lazily--bad-forms' to be tried again later."
     (with-current-buffer buffer
       (erase-buffer)
       (insert "lazily found the following errors in forms:\n\n")
-      (dolist (form-data lazily--bad-forms)
-        (let ((file (nth 2 form-data))
-              (err  (car (nth 1 form-data)))
-              (sym  (nth 1 (nth 1 form-data)))
-              (form (nth 0 form-data)))
-          (insert (format "[%s] %s %s found in form\n  %s\n"
-                          (or file "unknown file")
-                          (or (replace-regexp-in-string
-                               "-" " " (symbol-name err))
-                               "unknown error for")
-                          (or sym "unknown symbol")
-                          (pp-to-string form))))))
+      (dolist (dep-list lazily--bad-forms)
+        (let* ((bad-form-data (car dep-list))
+               (form (nth 0 bad-form-data))
+               (err (car (nth 1 form-data)))
+               (sym (cadr (nth 1 form-data)))
+               (file (nth 2 bad-form-data))
+               (remain (1- (length dep-list))))
+          (insert
+           (format "[%s] %s %s found in form which blocks %d form(s)\n  %s\n"
+                   (or file "unknown file")
+                   (or (replace-regexp-in-string
+                        "-" " " (symbol-name err))
+                       "unknown error for")
+                   (or sym "unknown symbol")
+                   (or remain 0)
+                   (pp-to-string form))))))
     (switch-to-buffer-other-window buffer)
     (local-set-key "q" 'delete-window)))
 
@@ -130,25 +149,59 @@ kept in `lazily--bad-forms' to be tried again later."
   "Eval FORMS catching void-variable or void-function errors.
 
 Any forms that throw void-variable or void-function errors are
-stored in `lazily--bad-forms' to be tried again later.
+stored in `lazily--bad-forms' to be tried again later. This
+version stops after finding the first error and collects all
+remaining forms to depend on the first one executing in
+`lazily--bad-forms'. For the greedy alternative, see
+`lazily-do-all'.
+
 Specifically, a `after-load-functions' hook is added to try and
-execute these bad forms again after a new feature is loaded."
-  (let ((wrapped-forms
+execute these bad forms again after a new feature is loaded. The
+error condition is stored and checked before executing to avoid
+executing more than once."
+  (let ((wrapped
+         (mapcar
+          (lambda (form)
+            `(if stop
+                 (push (list ',form) skipped-forms)
+               (condition-case error-data
+                   ,form
+                 ((void-variable void-function)
+                  (lazily--log error-data ',form)
+                  (setq stop t)
+                  (setq bad-form-data
+                        (list ',form error-data load-file-name))))))
+          forms)))
+    `(let (stop bad-form-data skipped-forms)
+       ,@wrapped
+       (setq lazily--bad-forms
+             (append lazily--bad-forms
+                     (list (cons bad-form-data (nreverse skipped-forms)))))
+       (add-hook 'after-load-functions #'lazily--redo))))
+
+;;;###autoload
+(defmacro lazily-do-all (&rest forms)
+  "Greedy version of `lazily-do'.
+
+This macro continues to execute subsequent forms after finding a
+bad one."
+  (let ((wrapped
          (mapcar
           (lambda (form)
             `(condition-case error-data
                  ,form
                ((void-variable void-function)
                 (lazily--log error-data ',form)
-                (push (list ',form error-data load-file-name)
+                ;; two lists because there are no dependencies in this case
+                (push (list (list ',form error-data load-file-name))
                       error-forms))))
           forms)))
     `(let (error-forms)
-       ,@wrapped-forms
-       (setq lazily--bad-forms
-             (append lazily--bad-forms
-                     (nreverse error-forms)))
-       (add-hook 'after-load-functions #'lazily--redo))))
+       ,@wrapped
+       (when error-forms
+         (setq lazily--bad-forms
+               (append lazily--bad-forms (nreverse error-forms)))
+         (add-hook 'after-load-functions #'lazily--redo)))))
 
 (provide 'lazily)
 ;;; lazily.el ends here
