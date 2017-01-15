@@ -128,8 +128,8 @@ kept in `lazily--bad-forms' to be tried again later."
       (dolist (dep-list lazily--bad-forms)
         (let* ((bad-form-data (car dep-list))
                (form (nth 0 bad-form-data))
-               (err (car (nth 1 form-data)))
-               (sym (cadr (nth 1 form-data)))
+               (err (car (nth 1 bad-form-data)))
+               (sym (cadr (nth 1 bad-form-data)))
                (file (nth 2 bad-form-data))
                (remain (1- (length dep-list))))
           (insert
